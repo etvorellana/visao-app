@@ -4,6 +4,7 @@ import math
 import sys
 import imutils
 from os import listdir
+from filter import filter_screws
 
 '''
 Does: list .png files
@@ -60,61 +61,61 @@ def segment_pcbs(image, screw_cascade):
     gray = cv.equalizeHist(gray)  #<-- Precisso para o cascade
     
     #screws = screw_cascade.detectMultiScale(gray)
-    screws = screw_cascade.detectMultiScale(gray, minNeighbors = 5,
-                                            minSize = (50, 50), maxSize = (60, 60))
+    screws = screw_cascade.detectMultiScale(gray, minNeighbors = 5)
     cx = 0.0
     cy = 0.0
 
     # aqui a gente tem um erro quando não encontra nenhum screw, aparentemente não retorna um numpy array
     # ERRO: AttributeError: 'tuple' object has no attribute 'shape'
     try: 
-        if (screws.shape[0] != 4):
+        if (screws.shape[0] < 4):
             pcbs = None
             return pcbs, pcbs
+        elif screws.shape[0] >= 4:
+            screws = filter_screws(image, screws)
     except AttributeError:
         pcbs = None
         return pcbs, pcbs
 
     
     # Procurand o centro de rotação
-    for(x, y, w, h) in screws:
-        cx = cx + x + w//2
-        cy = cy + y + h//2
+    for(x, y) in screws:
+        cx = cx + x
+        cy = cy + y
     center = (int(cx//4), int(cy//4))
     
     # Ordenando os screws para dimensionar a imagem
     scrD = {}
-    for(x, y, w, h) in screws:
-        cx = x + w//2
-        cy = y + h//2
-        if (cx < center[0]):
-            if (cy < center[1]):
-                scrD["lt"] = (cx, cy)
+    for(x, y) in screws:
+        if (x < center[0]):
+            if (y < center[1]):
+                scrD["lt"] = (x, y)
             else:
-                scrD["lb"] = (cx, cy)
+                scrD["lb"] = (x, y)
         else: 
-            if (cy < center[1]):
-                scrD["rt"] = (cx, cy)
+            if (y < center[1]):
+                scrD["rt"] = (x, y)
             else:
-                scrD["rb"] = (cx, cy)
+                scrD["rb"] = (x, y)
 
     # equalização adaptativa
-    clahe = cv.createCLAHE(clipLimit=1.0, tileGridSize=(8,8))
-    gray = clahe.apply(gray[:100,600:1200])
+    #clahe = cv.createCLAHE(clipLimit=1.0, tileGridSize=(8,8))
+    #gray = clahe.apply(gray[:100,600:1200])
 
     # detecção de bordas
-    gray = cv.Canny(gray,100,150)
+    #gray = cv.Canny(gray,100,150)
 
     # encontrar maior linha da imagem (esperamos que seja sempre a horizontal da placa)
-    lines = cv.HoughLines(gray,1,np.pi/180,150)
-    try:
-        if lines == None:
+    #lines = cv.HoughLines(gray,1,np.pi/180,150)
+    #try:
+    #    if lines == None:
             #image_rotated = imutils.rotate_bound(image, -45)
-            ang = -45
-    except ValueError: 
-        rho, theta = lines[0][0][0], lines[0][0][1]
+    #        ang = -45
+    #except ValueError:
+    #    rho, theta = lines[0][0][0], lines[0][0][1]
         #image_rotated = imutils.rotate_bound(image, theta*57.2-45)
-        ang = np.degrees(theta) - 45
+        #ang = np.degrees(theta) - 45
+        ang = np.degrees(np.arctan2(scrD["lb"][1] - scrD["rt"][1], scrD["rt"][0] - scrD["lb"][0]))
         
     rows,cols = image.shape[0], image.shape[1]
     # distância em pixels entre os screws
