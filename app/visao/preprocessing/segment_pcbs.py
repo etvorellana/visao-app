@@ -116,6 +116,7 @@ def segment_pcbs(image, screw_cascade):
         #image_rotated = imutils.rotate_bound(image, theta*57.2-45)
         #ang = np.degrees(theta) - 45
         ang = np.degrees(np.arctan2(scrD["lb"][1] - scrD["rt"][1], scrD["rt"][0] - scrD["lb"][0]))
+        ang -= 2.61 # correção do ângulo dos parafusos
         
     rows,cols = image.shape[0], image.shape[1]
     # distância em pixels entre os screws
