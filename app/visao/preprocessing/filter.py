@@ -1,20 +1,20 @@
-import numpy
 import math
-import cv2
-import imutils
+import cv2 as cv
+from numpy import degrees, arctan2, array, ndarray, append
+from imutils import resize
 import operator
 
 
 def show_image(img, image_name = 'Image'):
-    newimage = imutils.resize(img, width=1366)
-    cv2.imshow(image_name, newimage)
-    cv2.waitKey()
-    cv2.destroyAllWindows()
+    newimage = resize(img, width=1366)
+    cv.imshow(image_name, newimage)
+    cv.waitKey()
+    cv.destroyAllWindows()
 
 
 class ArrayPair:
-    first_box_center: numpy.array(2)
-    second_box_center: numpy.array(2)
+    first_box_center: array(2)
+    second_box_center: array(2)
     angle: float
     has_angle: bool
 
@@ -25,37 +25,39 @@ class ArrayPair:
         if self.first_box_center[0] > self.second_box_center[0]:
             self.first_box_center, self.second_box_center = self.second_box_center, self.first_box_center
 
-        self.angle = math.degrees(math.atan2(self.first_box_center[1] - self.second_box_center[1],
-                                             self.second_box_center[0] - self.first_box_center[0]))
+        self.angle = degrees(arctan2(self.first_box_center[1] - self.second_box_center[1],
+                                    self.second_box_center[0] - self.first_box_center[0]))
         self.has_angle = True
 
     @staticmethod
     def get_pair(first, second, pair_array):
         for i in range(pair_array.__len__()):
-            if (pair_array[i][0] == first or pair_array[i][0] == second) and (pair_array[i][1] == first or pair_array[i][1] == second):
+            if (pair_array[i][0] == first or pair_array[i][0] == second) and (
+                    pair_array[i][1] == first or pair_array[i][1] == second):
                 return pair_array[i][2]
 
 
 def filter_screws(image, screws):
     print(str(screws.shape[0]) + ' screws detected')
 
-    centro_parafusos = []
-
+    # Desabilitando filtro com houghCircles por enquanto
+    # centro_parafusos = []
     # Filtro com houghLines
-    for (x, y, w, h) in screws:
-        screw = image[y:y+h, x:x+w]
-        circle = cv2.HoughCircles(screw, cv2.HOUGH_GRADIENT, 1, w/2, param1=100, param2=30, minRadius=h//4, maxRadius=h//2)
-        if circle is not None:
-            a, b, r = circle[0][0][0], circle[0][0][1], circle[0][0][2]
-            # imagecopy = cv2.circle(image, (int(x+a), int(y+b)), int(r), (255, 0, 0), 1)
-            centro_parafusos.append((x+a, y+b))
+    #for (x, y, w, h) in screws:
+    #    screw = image[y:y + h, x:x + w]
+    #    circle = cv.HoughCircles(screw, cv.HOUGH_GRADIENT, 1, w / 2, param1=100, param2=30, minRadius=h // 4, maxRadius=h // 2)
+    #    if circle is not None:
+    #        a, b, r = circle[0][0][0], circle[0][0][1], circle[0][0][2]
+    #        imagecopy = cv.circle(imagecopy, (int(x + a), int(y + b)), int(r), (255, 0, 0), 1)
+    #        centro_parafusos.append((x + a, y + b))
 
-    if centro_parafusos.__len__() == 4:
-        return centro_parafusos
+    # if centro_parafusos.__len__() <= 3:
+    centro_parafusos = []
+    for (x, y, w, h) in screws:
+        centro_parafusos.append((x + (w // 2), y + (h // 2)))
 
     ### Filtro por ângulos ###
-    pair_array = numpy.ndarray(shape=(0, 3))
-
+    pair_array = ndarray(shape=(0, 3))
     for i in range(centro_parafusos.__len__() - 1):
         for j in range(i+1, centro_parafusos.__len__()):
             pair = ArrayPair()
@@ -64,21 +66,20 @@ def filter_screws(image, screws):
             pair.has_angle = False
             ### pair.calculate_angle(angle)
 
-            pair_array = numpy.append(pair_array, [[i, j, pair]], axis=0)
-
-    sup_esq, sup_dir, inf_esq, inf_dir = [], [], [], []
-    centroImagem = (image.shape[1] / 2, image.shape[0] / 2)
-    i = 0
+            pair_array = append(pair_array, [[i, j, pair]], axis=0)
 
     ### Coloca as detecções em quadrantes ###
+    sup_esq, sup_dir, inf_esq, inf_dir = [], [], [], []
+    centro_imagem = (image.shape[1] / 2, image.shape[0] / 2)
+    i = 0
     for (x, y) in centro_parafusos:
-        if x < centroImagem[0]:
-            if y > centroImagem[1]:
+        if x < centro_imagem[0]:
+            if y < centro_imagem[1]:
                 sup_esq.append((x, y, i))
             else:
                 inf_esq.append((x, y, i))
         else:
-            if y > centroImagem[1]:
+            if y < centro_imagem[1]:
                 sup_dir.append((x, y, i))
             else:
                 inf_dir.append((x, y, i))
@@ -123,5 +124,8 @@ def filter_screws(image, screws):
     newgroup = sorted(newgroup, key=operator.itemgetter(4))
 
     (a, b, c, d) = (newgroup[0][0], newgroup[0][1], newgroup[0][2], newgroup[0][3])
-    filtered_screws = (centro_parafusos[a], centro_parafusos[b], centro_parafusos[c], centro_parafusos[d])
+    # filtered_screws = (centro_parafusos[a], centro_parafusos[b], centro_parafusos[c], centro_parafusos[d])
+    filtered_screws = {"left_top": centro_parafusos[a], "right_top": centro_parafusos[b],
+                       "left_bottom": centro_parafusos[c], "right_bottom": centro_parafusos[d]}
+
     return filtered_screws

@@ -59,102 +59,83 @@ def segment_pcbs(image, screw_cascade):
     # grayscale
     gray = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
     gray = cv.equalizeHist(gray)  #<-- Precisso para o cascade
-    
+
     #screws = screw_cascade.detectMultiScale(gray)
-    screws = screw_cascade.detectMultiScale(gray, minNeighbors = 5)
-    cx = 0.0
-    cy = 0.0
+    screws = screw_cascade.detectMultiScale(gray, minNeighbors=3)
 
     # aqui a gente tem um erro quando não encontra nenhum screw, aparentemente não retorna um numpy array
     # ERRO: AttributeError: 'tuple' object has no attribute 'shape'
-    try: 
+    try:
         if (screws.shape[0] < 4):
             pcbs = None
             return pcbs, pcbs
         elif screws.shape[0] >= 4:
-            screws = filter_screws(image, screws)
+            screws = filter_screws(gray, screws)
     except AttributeError:
         pcbs = None
         return pcbs, pcbs
 
-    
-    # Procurand o centro de rotação
-    for(x, y) in screws:
+    # Procurando o centro dos parafusos
+    cx = 0.0
+    cy = 0.0
+    for key in screws:
+        (x, y) = screws[key]
         cx = cx + x
         cy = cy + y
-    center = (int(cx//4), int(cy//4))
-    
-    # Ordenando os screws para dimensionar a imagem
-    scrD = {}
-    for(x, y) in screws:
-        if (x < center[0]):
-            if (y < center[1]):
-                scrD["lt"] = (x, y)
-            else:
-                scrD["lb"] = (x, y)
-        else: 
-            if (y < center[1]):
-                scrD["rt"] = (x, y)
-            else:
-                scrD["rb"] = (x, y)
+    pallet_center = (int(cx//4), int(cy//4))
 
-    # equalização adaptativa
-    #clahe = cv.createCLAHE(clipLimit=1.0, tileGridSize=(8,8))
-    #gray = clahe.apply(gray[:100,600:1200])
+    ang = np.degrees(np.arctan2(screws["left_bottom"][1] - screws["right_top"][1], screws["right_top"][0] - screws["left_bottom"][0]))
+    # Ordem dos parafusos é: superior-esquerdo, superior-direito, inferior-esquerdo, inferior-direito
 
-    # detecção de bordas
-    #gray = cv.Canny(gray,100,150)
-
-    # encontrar maior linha da imagem (esperamos que seja sempre a horizontal da placa)
-    #lines = cv.HoughLines(gray,1,np.pi/180,150)
-    #try:
-    #    if lines == None:
-            #image_rotated = imutils.rotate_bound(image, -45)
-    #        ang = -45
-    #except ValueError:
-    #    rho, theta = lines[0][0][0], lines[0][0][1]
-        #image_rotated = imutils.rotate_bound(image, theta*57.2-45)
-        #ang = np.degrees(theta) - 45
-        ang = np.degrees(np.arctan2(scrD["lb"][1] - scrD["rt"][1], scrD["rt"][0] - scrD["lb"][0]))
-        ang -= 2.61 # correção do ângulo dos parafusos
-        
-    rows,cols = image.shape[0], image.shape[1]
-    # distância em pixels entre os screws
-    c1 = np.sqrt((scrD["lb"][0] - scrD["rb"][0])**2 + (scrD["lb"][1] - scrD["rb"][1])**2)
-    c2 = np.sqrt((scrD["lt"][0] - scrD["rt"][0])**2 + (scrD["lt"][1] - scrD["rt"][1])**2)
-    c = (c1 + c2)/2
+    ang = (ang - 2.61) + 180 # correção do ângulo dos parafusos
     ang *= -1
-    
-    M = cv.getRotationMatrix2D(center,ang,1)
-    image = cv.warpAffine(image,M, (cols,rows))
-    
+
+    rows, cols = image.shape[0], image.shape[1]
+    cix = cols // 2
+    ciy = rows // 2
+    tx = cix - pallet_center[0]
+    ty = ciy - pallet_center[1]
+    # let M = cv.matFromArray(2, 3, cv.CV_64FC1, [1, 0, tx, 0, 1, ty])
+    # M = np.array([[1, 0, tx], [0, 1, ty]])
+    M = np.float32([[1, 0, tx], [0, 1, ty]])
+    image = cv.warpAffine(image, M, (cols, rows))
+    image_center = (cix, ciy)
+
+    # distância em pixels entre os screws
+    c1 = np.sqrt((screws["left_bottom"][0] - screws["right_bottom"][0])**2 + (screws["left_bottom"][1] - screws["right_bottom"][1])**2)
+    c2 = np.sqrt((screws["left_top"][0] - screws["right_top"][0])**2 + (screws["left_top"][1] - screws["right_top"][1])**2)
+    c = (c1 + c2)/2
+
+    M = cv.getRotationMatrix2D(image_center, ang, 1)
+    image = cv.warpAffine(image, M, (cols, rows))
+
     #pxm = c/182  #pixels por milímetro
     pxm = c/163  #pixels por milímetro (distancia entre os parafusos)
     pcbx = 140 * pxm # largura da pcb em pixels (140 mm)
     pcby = 120 * pxm # altura da pcb em pixels
     extra = 25 * pxm # folga horizaontal
-    
+
     lb = rows//2
     lt = int(lb - pcby)
-    if lt < 0: 
+    if lt < 0:
         lt = 0
     lr = cols//2
     ll = int(lr - pcbx)
     lr = int(lr + extra)
-    if ll < 0: 
+    if ll < 0:
         ll = 0
-    
+
     #left = image[lt:lb, ll:lr,:].copy()
     left = image[lt:lb, ll:lr,:]
 
     rt = rows//2
     rb = int(rt + pcby)
-    if rb > rows: 
+    if rb > rows:
         rb = rows
     rl = cols//2
     rr = int(rl + pcbx)
     rl = int(rl - extra)
-    if rr > cols: 
+    if rr > cols:
         rr = cols
 
     #right = image[rt:rb, rl:rr, :].copy()
